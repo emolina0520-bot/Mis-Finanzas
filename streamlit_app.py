@@ -2,60 +2,48 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 
-# Configuración de la página
-st.set_page_config(page_title="Mi Portafolio Eduardo", layout="wide")
+st.set_page_config(page_title="Portafolio Eduardo", layout="wide")
 
-# Conexión con tu Google Sheets
+# Tu ID de hoja actualizado
 SHEET_ID = "1-fhgPN3WZWLz0JwdQcnzAWXVSJ9Hb124kcvDDooMBtA"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
 
+@st.cache_data(ttl=600) # Esto evita que Google te bloquee (guarda los datos 10 min)
 def load_data():
     df = pd.read_csv(URL)
+    # Limpieza: Convertir categorías a texto y quitar vacíos
+    df['Categoría'] = df['Categoría'].astype(str).replace('nan', 'Sin Categoría')
     return df
 
 st.title("📊 Mi Dashboard de Inversiones")
 
 try:
     data = load_data()
-    
-    # Separación por categorías
-    categorias = data['Categoría'].unique()
-    tabs = st.tabs(list(categorias) + ["Resumen Global"])
+    cats = [str(c) for c in data['Categoría'].unique() if c]
+    tabs = st.tabs(cats + ["Resumen Global"])
 
     total_patrimonio = 0
 
-    for i, cat in enumerate(categorias):
+    for i, cat in enumerate(cats):
         with tabs[i]:
-            st.header(f"Sección {cat}")
             df_cat = data[data['Categoría'] == cat]
-            
-            for index, row in df_cat.iterrows():
-                # Obtener precio en tiempo real si tiene Ticker
-                precio_actual = 0
-                if pd.notna(row['Ticker']) and row['Ticker'] != 'NA':
-                    ticker = yf.Ticker(row['Ticker'])
-                    precio_actual = ticker.history(period="1d")['Close'].iloc[-1]
-                else:
-                    precio_actual = row['Costo_Promedio'] # Para NU o montos fijos
-
-                rendimiento = (precio_actual - row['Costo_Promedio']) / row['Costo_Promedio'] * 100
-                total_activo = precio_actual * row['Cantidad']
-                total_patrimonio += total_activo
-
-                # Lógica de color para Alerta
-                color = "inverse" if precio_actual <= row['Precio_Alerta'] else "normal"
+            for _, row in df_cat.iterrows():
+                precio_actual = row['Costo_Promedio']
+                # Intentar buscar precio real si hay Ticker
+                if pd.notna(row['Ticker']) and str(row['Ticker']) != 'nan':
+                    try:
+                        t = yf.Ticker(str(row['Ticker']))
+                        precio_actual = t.history(period="1d")['Close'].iloc[-1]
+                    except: pass
                 
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.metric(label=row['Activo'], value=f"${total_activo:,.2f} {row['Moneda']}", delta=f"{rendimiento:.2f}%")
-                with col2:
-                    if precio_actual <= row['Precio_Alerta']:
-                        st.error("🚨 ¡ALERTA!")
+                valor_total = precio_actual * row['Cantidad']
+                total_patrimonio += valor_total
+                
+                st.metric(label=row['Activo'], value=f"${valor_total:,.2f} {row['Moneda']}")
 
     with tabs[-1]:
-        st.header("Patrimonio Total")
-        st.subheader(f"Total Estimado: ${total_patrimonio:,.2f} MXN")
-        st.info("Este total es una suma aproximada de tus activos en pesos y dólares.")
+        st.metric("Patrimonio Total Estimado", f"${total_patrimonio:,.2f} MXN")
 
 except Exception as e:
-    st.error(f"Hubo un error al leer los datos. Revisa que tu hoja de Google sea pública. Error: {e}")
+    st.error(f"Error técnico: {e}. Revisa que las columnas de tu Excel tengan los nombres correctos.")
+
