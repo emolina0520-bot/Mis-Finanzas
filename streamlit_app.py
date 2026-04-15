@@ -27,7 +27,6 @@ try:
     total_patrimonio_mxn = 0
     
     # USAMOS TU COLUMNA 'Categoría' (Columna F)
-    # Si por algo no la encuentra, intentamos con la posición 5
     col_cat = 'Categoría' if 'Categoría' in data.columns else data.columns[5]
     
     # Ordenamos las categorías para que Cripto salga primero
@@ -46,21 +45,26 @@ try:
                 costo_raw = str(row['Costo Promedio']).replace(',', '').replace('$', '')
                 p_base = pd.to_numeric(costo_raw, errors='coerce')
                 
-                # Si tiene Ticker y NO es NU, buscamos precio real
+                # Si tiene Ticker y NO es Sofipo, buscamos precio real
                 if ticker and ticker.lower() != 'nan' and len(ticker) > 2 and cat != "Sofipo":
                     try:
                         t = yf.Ticker(ticker)
                         hist = t.history(period="1d")
                         if not hist.empty:
                             p_base = hist['Close'].iloc[-1]
-                    except: pass
+                    except: 
+                        pass
                 
-                # REGLA DE CONVERSIÓN
-                # Si el ticker termina en -USD o es un ETF gringo, convertimos a MXN
-                if "-USD" in ticker.upper() or ticker in ["VOO", "QQQ", "SMH", "SPMO"]:
+                # --- LÓGICA DE CONVERSIÓN CORREGIDA ---
+                # Detectamos la moneda desde tu columna 'Moneda' (Columna H)
+                moneda = str(row['Moneda']).strip().upper() if 'Moneda' in data.columns else "MXN"
+                
+                # Si la moneda es USD o el ticker es de cripto (-USD), convertimos
+                if moneda == "USD" or "-USD" in ticker.upper():
                     valor_mxn = (cantidad * p_base) * usd_mxn
                 else:
                     valor_mxn = cantidad * p_base
+                # ---------------------------------------
                 
                 total_patrimonio_mxn += valor_mxn
                 st.metric(label=row['Activo'], value=f"${valor_mxn:,.2f} MXN")
